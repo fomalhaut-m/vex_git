@@ -158,16 +158,61 @@ class _RepoDetailScreenState extends ConsumerState<RepoDetailScreen>
   }
 
   Widget _buildBranchChip(Repository repo, AsyncValue<List<GitBranch>> branches) {
-    final branchName = branches.whenOrNull(
-      data: (list) => list.firstWhere(
-        (b) => b.isCurrent,
-        orElse: () => const GitBranch(name: 'main', type: BranchType.local),
-      ).name,
-    ) ?? '加载中';
-    return Chip(
-      avatar: const Icon(Icons.call_split, size: 16),
-      label: Text(branchName, style: const TextStyle(fontSize: 12)),
-      backgroundColor: Colors.blueGrey[800],
+    return branches.when(
+      data: (list) {
+        final current = list.firstWhere(
+          (b) => b.isCurrent,
+          orElse: () => const GitBranch(name: 'main', type: BranchType.local),
+        );
+        return PopupMenuButton<GitBranch>(
+          child: Chip(
+            avatar: const Icon(Icons.call_split, size: 16),
+            label: Text(current.name, style: const TextStyle(fontSize: 12)),
+            backgroundColor: Colors.blueGrey[800],
+          ),
+          itemBuilder: (_) => list
+              .where((b) => b.type == BranchType.local)
+              .map((b) => PopupMenuItem(
+                    value: b,
+                    child: Row(
+                      children: [
+                        if (b.isCurrent)
+                          const Icon(Icons.check, size: 16, color: Colors.green)
+                        else
+                          const SizedBox(width: 16),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(b.name)),
+                      ],
+                    ),
+                  ))
+              .toList(),
+          onSelected: (b) async {
+            if (b.isCurrent) return;
+            try {
+              final git = ref.read(gitServiceProvider);
+              await git.checkout(repo.localPath, b.name);
+              ref.invalidate(branchesProvider(repo.localPath));
+              ref.invalidate(logProvider(repo.localPath));
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('切换分支失败: $e')),
+                );
+              }
+            }
+          },
+        );
+      },
+      loading: () => Chip(
+        avatar: const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+        label: const Text('...', style: TextStyle(fontSize: 12)),
+        backgroundColor: const Color(0xFF37474F),
+      ),
+      error: (_, __) => Chip(
+        avatar: const Icon(Icons.error, size: 16),
+        label: const Text('错误', style: TextStyle(fontSize: 12)),
+        backgroundColor: Colors.red[800],
+      ),
     );
   }
 
